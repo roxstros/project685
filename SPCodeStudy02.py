@@ -318,7 +318,6 @@ re_entry = {"L" : {"1" : 1.10, "2" : 1.50, "3" : 1.95},
 #tick_val = 12.50
 #rownum = 10
 
-X = 0.25   # General Risk Mgmt. multiplier
 for rownum in range(1, 1500):
     if df.TrendDay.loc[rownum] == 0 and df.TrendDir.loc[rownum] == "Up":
         SP = df.high.loc[rownum]                            # assign the 'high' slice to the SP variable
@@ -327,6 +326,8 @@ for rownum in range(1, 1500):
         while df.TrendDay.loc[rownum] > 0:              # this 'while' loop finds initial entry, records initial P_L, then advances to next day
             if df.high.loc[rownum] > SP:
                 En_price1 = SP + tick
+                RE_CAN = False
+                df.RE_CAN.loc[rownum] = RE_CAN
                 df.En_price1.loc[rownum] = En_price1
                 df.Counter1.loc[rownum] = 1                  # initialize Counter1
                 df.Position.loc[rownum] = 1                  # 'position' variable
@@ -339,14 +340,20 @@ for rownum in range(1, 1500):
                 df.SP.loc[rownum] = SP
                 rownum += 1
 
+                #  at this point,    Position=1     RE_CAN = False
+
+
         while df.TrendDay.loc[rownum] > 0:
             a = AP_U()
             b = SL_U()
             c = TP_U()
+            X = 0.25   # General Risk Mgmt. multiplier
 
             # case 1: price retraces - look to add to initial position
-            if df.Position.loc[rownum] == 1 and df.low.loc[rownum] < a:
+            if df.Position.loc[rownum] == 1 and df.low.loc[rownum] < a and df.RE_CAN.loc[rownum] == False:
                 En_price2 = a - tick
+                RE_CAN = False
+                df.RE_CAN.loc[rownum] = RE_CAN
                 df.En_price2.loc[rownum] = En_price2
                 df.Counter1.loc[rownum] = df.Counter1.loc[rownum-1] + 1
                 df.Counter2.loc[rownum] = 1
@@ -356,7 +363,7 @@ for rownum in range(1, 1500):
                 continue
 
             # case 2:  take profit on initial position
-            elif df.Position.loc[rownum] == 1 and df.high.loc[rownum] > c:
+            elif df.Position.loc[rownum] == 1 and df.high.loc[rownum] > c and df.RE_CAN.loc[rownum] == False:
                 Ex_price1 = c + tick
                 df.Ex_price1.loc[rownum] = Ex_price1
                 df.Counter1.loc[rownum] = 0
@@ -381,9 +388,11 @@ for rownum in range(1, 1500):
                 continue
 
              # case 4:  RM functions do not impact initial position so carry to next day
-            elif df.Position.loc[rownum] == 1 and df.high.loc[rownum] <=c and df.low.loc[rownum] >= a:
+            elif df.Position.loc[rownum] == 1 and df.high.loc[rownum] <=c and df.low.loc[rownum] >= a and df.RE_CAN.loc[rownum] == False:
                 df.Counter1.loc[rownum] = df.Counter1.loc[rownum-1] + 1
                 df.Position.loc[rownum] = 1
+                RE_CAN = False
+                df.RE_CAN.loc[rownum] = RE_CAN
                 df.P_L.loc[rownum] = df.close.loc[rownum] - En_price1
                 rownum += 1
                 continue
@@ -393,6 +402,8 @@ for rownum in range(1, 1500):
                 df.Counter1.loc[rownum] = df.Counter1.loc[rownum-1] + 1
                 df.Counter2.loc[rownum] = df.Counter2.loc[rownum-1] + 1
                 df.Position.loc[rownum] = 2
+                RE_CAN = False
+                df.RE_CAN.loc[rownum] = RE_CAN
                 df.P_L.loc[rownum] = (df.close.loc[rownum] - En_price1) + (df.close.loc[rownum] - En_price2)
                 rownum += 1
                 continue
@@ -422,7 +433,11 @@ for rownum in range(1, 1500):
                 Ex_price4 = b - tick
                 df.Ex_price3.loc[rownum] = Ex_price3
                 df.Ex_price4.loc[rownum] = Ex_price4
-                #SL = True
+                df.Counter1.loc[rownum] = ""
+                df.Counter2.loc[rownum] = ""
+                df.Position.loc[rownum] = 0
+                RE_CAN = False
+                df.RE_CAN.lol[rownum] = RE_CAN
                 df.P_L.loc[rownum] = (Ex_price3 - En_price1) + (Ex_price4 - En_price2)
                 rownum += 1
                 while df.TrendDay.loc[rownum] != 0:
@@ -432,3 +447,4 @@ for rownum in range(1, 1500):
 
     else:
         rownum += 1
+
