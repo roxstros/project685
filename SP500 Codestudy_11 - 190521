@@ -1,0 +1,693 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+df = pd.read_csv("sp500_testdata_2.csv")
+
+df.Date = pd.to_datetime(df.Date)
+df["TR"] = ""
+df.TR.loc[0] = df.high.loc[0] - df.low.loc[0]    # Initial value for TR
+df.TR.loc[1:] = ""
+df["N"] = ""
+df["N"].loc[0] = df.high.loc[0] - df.low.loc[0]   # Initial value for N
+df["N"].loc[1:] = ""
+df["NPP"] = ""
+df.NPP.loc[0] = 0.00     # Initial value for NPP
+df["c_type"] = ""
+df["FL"] = ""
+df["SL"] = ""
+df.FL.loc[0] = 0.00      # Initial value for FL
+df.SL.loc[0] = 0.00      # Initial value for SL
+df["Sep"] = ""           # Percentage separation between FL and SL
+df.Sep.loc[0] = 0.00
+df["TrendDir"] = ""
+df["TrendDir"] = df["TrendDir"].astype('str', errors='ignore')
+df["TrendDay"] = ""
+df["TrendDay"] = df["TrendDay"].astype('int', errors='ignore')
+df["FE_FL"] = ""       
+df["AE_FL"] = ""
+df["SP"] = ""
+df["En_price1"] = ""
+df["Pos_St"] = ""
+df["Pos_End"] = ""
+df["Counter1"] = ""
+df["Counter1"] = df["Counter1"].astype('int', errors='ignore')
+df["Counter2"] = ""
+df["Counter2"] = df["Counter2"].astype('int', errors='ignore')
+df["Trade_Trig"] = ""   # function that price action invokes to change Pos_St and/or Pos_End    
+df["Trades"] = ""
+df["a"] = ""
+df["b"] = ""
+df["c"] = ""
+df["d"] = ""
+df["RE_CAN"] = ""
+df["RE_CAN"] = df["RE_CAN"].astype('bool', errors='ignore')
+# df["EnP2_RE"] = ""
+df["En_price2"] = ""
+df["Ex_price1"] = ""
+df["Ex_price2"] = ""
+df["Ex_price3"] = ""
+df["Ex_price4"] = ""
+df["Ex_price5"] = ""
+df["P_L"] = ""
+df["Capital"] = ""
+df["Capital"].loc[0:25] = 25000
+
+df[["TR", "N", "NPP", "FL", "SL", "Sep", "TrendDay", "FE_FL", "AE_FL", "SP", "En_price1", "Pos_St", "Pos_End", "a", "b", "c", "d", "En_price2", "Ex_price1", "Ex_price2", "Ex_price3", "Ex_price4", "Ex_price5", "P_L", "Capital"]] = df[["TR", "N", "NPP", "FL", "SL", "Sep", "TrendDay", "FE_FL", "AE_FL", "SP", "En_price1", "Pos_St", "Pos_End", "a", "b", "c", "d", "En_price2", "Ex_price1", "Ex_price2", "Ex_price3", "Ex_price4", "Ex_price5", "P_L", "Capital"]].apply(pd.to_numeric)
+
+df.dtypes
+
+#  4 loops: 
+#   a) calculate True Range for every row after the first row
+#   b) calculate N for every row after the first row
+#   c) calculate NPP for every row after first row
+#   d) determine Candle type: open, dark, doji_open, doji_dark
+
+
+rownum = 1
+for rownum in range(1,1500):
+    
+    """ a)  True Range """
+    #  True Range = max( absolute value(H - L), absolute value (H - C(previous)), absoulute value (C(previous) - L))
+    df.TR.loc[rownum:] = max(abs(df.high.loc[rownum] - df.low.loc[rownum]), abs(df.high.loc[rownum] - df.close.loc[rownum-1]), abs(df.close.loc[rownum-1] - df.low.loc[rownum]))
+    
+    """ b)  N  """
+    #  N = N(previous) + (TR-N(previous)) / (0.5 * 20 + 1)
+    Constant = 20
+    df.N.loc[rownum:] = df.N.loc[rownum - 1]+(df.TR.loc[rownum]-df.N.loc[rownum - 1])/(0.5 * (Constant + 1))
+    
+    """ c)  NPP  """
+    df.NPP.loc[rownum:] = df.N.loc[rownum]/df.close.loc[rownum-1] * 100
+    
+    """ d)  c_type (candle type)  """
+    if df.close.loc[rownum] > df.open.loc[rownum]:
+        df.c_type.loc[rownum:] = "o"
+    elif df.close.loc[rownum] < df.open.loc[rownum]:
+        df.c_type.loc[rownum:] = "d"
+    elif df.close.loc[rownum] == df.open.loc[rownum]:
+        candle_range = df.high.loc[rownum] - df.low.loc[rownum]
+        if df.open.loc[rownum] >= (df.low.loc[rownum] + candle_range/2):   # open & close occur at middle or in top half of range
+            df.c_type.loc[rownum:] = "d-o"
+        else:
+            df.c_type.loc[rownum:] = "d-d"    # open & close occur in lower half of range 
+            
+    rownum += 1
+    
+# 3 min 42 sec to finish execution on 1500 rows
+# loop that yields FL, SL, Sep values after index position zero
+
+rownum = 1
+FL_period = 7
+SL_period = 20
+for rownum in range(1, 1500):
+    df.FL.loc[rownum:] = df.FL.loc[rownum-1] + (df.close.loc[rownum] - df.FL.loc[rownum-1])/((FL_period+1)/2)
+    df.SL.loc[rownum:] = df.SL.loc[rownum-1] + (df.close.loc[rownum] - df.SL.loc[rownum-1])/((SL_period+1)/2)
+    df.Sep.loc[rownum] = (df.FL.loc[rownum] - df.SL.loc[rownum])/df.SL.loc[rownum] * 100
+    rownum += 1
+    
+    
+    
+# Determining TrendDir based on boolean result for question: FL > SL ?
+# start at index = 25 to give ramp-up time for lags
+rownum = 100
+for rownum in range(25, 1500):
+    if df.FL.loc[rownum] > df.SL.loc[rownum]:
+        df.TrendDir.loc[rownum] = "Up"
+    else:    
+        df.TrendDir.loc[rownum] = "Down"
+rownum += 1
+
+# iterate through rows starting at row 101 to find where trends initiate (TrendDay=0) and continue (TrendDay>0)
+
+rownum = 101           # start at index = 101 (TrendDay at index=100 is set to 0)
+for rownum in range(25, 1500):
+    if df.TrendDir.loc[rownum] == df.TrendDir.loc[rownum-1]:
+        df.TrendDay.loc[rownum] = (df.TrendDay.loc[rownum-1] + 1)
+    else:
+        df.TrendDay.loc[rownum] = 0
+rownum += 1
+
+
+# 1 min 23 sec to finish execution on 1500 rows
+
+""" FE_FL and AE_FL - favorable & adverse distance of a day's High & Low from the previous day's FL in terms of previous N """
+
+rownum = 25   # start after series for TrendDay transitions from blank (string value) to int
+for rownum in range(25, 1500):
+    if df.TrendDay.loc[rownum] == 0:        
+        df.FE_FL.loc[rownum] = ""
+        df.AE_FL.loc[rownum] = ""
+    else:
+        if df.TrendDir.loc[rownum] == "Up":
+        
+            #Favorable Excursion from FL in terms of N for long position:
+            if df.high.loc[rownum] < df.FL.loc[rownum-1]:
+                df.FE_FL.loc[rownum] = 0
+            else:
+                df.FE_FL.loc[rownum] = (df.high.loc[rownum] - df.FL.loc[rownum-1])/df.N.loc[rownum-1]
+
+            #Adverse Excursion from FL in terms of N for for long position (display positive value):
+            if df.low.loc[rownum] > df.FL.loc[rownum-1]:
+                df.AE_FL.loc[rownum] = 0
+            else:
+                df.AE_FL.loc[rownum] = abs((df.low.loc[rownum] - df.FL.loc[rownum-1])/df.N.loc[rownum-1])
+    
+        elif df.TrendDir.loc[rownum] == "Down":
+        
+            #Favorable Excursion from FL in terms of N for Short position:
+            if df.low.loc[rownum] > df.FL.loc[rownum-1]:
+                df.FE_FL.loc[rownum] = 0
+            else:
+                df.FE_FL.loc[rownum] = (df.FL.loc[rownum-1] - df.low.loc[rownum])/df.N.loc[rownum-1]
+
+            #Adverse Excursion from FL in terms of N for for Short position (display positive value):
+            if df.high.loc[rownum] < df.FL.loc[rownum-1]:
+                df.AE_FL.loc[rownum] = 0
+            else:
+                df.AE_FL.loc[rownum] = abs((df.FL.loc[rownum-1] - df.high.loc[rownum])/df.N.loc[rownum-1])        
+            
+# incrememnt to next bar
+rownum += 1
+
+
+#                    0       1     2      3      4      5      6      7      8      9      10     11     12     13     14     15     16     17     18     19     20     21     22    23      24     25     26    27    28    29    30    31    32    33    34    35    36    37    38    39    40    41    42    43    44    45    46    47    48    49    50    51    52    53    54
+risk_multiplier = [-2.25, -2.00, -1.90, -1.80, -1.75, -1.70, -1.60, -1.50, -1.40, -1.30, -1.25, -1.20, -1.10, -1.00, -0.90, -0.80, -0.75, -0.70, -0.60, -0.50, -0.40, -0.30, -0.25, -0.20, -0.15, -0.10, -0.05, 0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.60, 0.70, 0.75, 0.80, 0.90, 1.00, 1.10, 1.20, 1.25, 1.30, 1.40, 1.50, 1.60, 1.70, 1.75, 1.80, 1.90, 2.00, 2.25]
+
+
+"""  UPTREND risk multipliers """
+""" run whole program for each Risk_Multiplier element to find highest bliss parameters for optimal P_L """
+
+
+"""  add_pos volatility parameters   """
+u_ap_v1 = risk_multiplier[25:33]                                              # v1: NPP <= 1.10  (median N = 13.87)
+u_ap_v2 = risk_multiplier[19:36]                                              # v2: NPP <= 1.25  (median N = 15.07)
+u_ap_v3 = risk_multiplier[7:23]                                               # v3: NPP <= 1.50  (median N = 16.6)
+u_ap_v4 = risk_multiplier[3:28]                                               # v4: NPP <= 1.75  (median N = 18.9)
+u_ap_v5 = risk_multiplier[1:28]                                               # v5: NPP <= 2.00  (median N = 21.0)
+u_ap_v6 = risk_multiplier[1:28]                                               # v6: NPP <= 2.25  (median N = 19.9)
+u_ap_v7 = risk_multiplier[1:28]                                               # v7: NPP <= 2.50  (median N = 23.0)
+                                                                            # v8: NPP <= 3.00  (median N = 28.4)
+"""   too volatile for precision risk management  """                       # v9: NPP <= 4.00  (median N = 33.7)
+u_ap_v8 = []                                                                  # v10: NPP > 4.00  (median N = 38.6)
+u_ap_v9 = []
+u_ap_v10 = []
+
+
+"""  Stop Loss volatility parameters   """
+u_sL_v1 = risk_multiplier[1:20]                            
+u_sL_v2 = risk_multiplier[1:20]                          
+u_sL_v3 = risk_multiplier[1:20]                   
+u_sL_v4 = risk_multiplier[0:14]                            
+u_sL_v5 = risk_multiplier[0:14]                          
+u_sL_v6 = risk_multiplier[0:14]                      
+u_sL_v7 = risk_multiplier[0:14]                     
+u_sL_v8 = risk_multiplier[0:5]
+u_sL_v9 = risk_multiplier[0:5]
+u_sL_v10 = risk_multiplier[0:5]
+
+
+"""  Take Profit volatility parameters   """
+u_tp_v1 = risk_multiplier[35:54]                           
+u_tp_v2 = risk_multiplier[38:54]                                
+u_tp_v3 = risk_multiplier[38:54]             
+u_tp_v4 = risk_multiplier[38:54]           
+u_tp_v5 = risk_multiplier[38:54]                          
+u_tp_v6 = risk_multiplier[38:54]                         
+u_tp_v7 = risk_multiplier[38:54]                         
+u_tp_v8 = risk_multiplier[47:54]
+u_tp_v9 = risk_multiplier[47:54]
+u_tp_v10 = risk_multiplier[47:54]
+
+
+"""  RECAN volatility parameters  (same as AP)  """
+u_re_v1 = risk_multiplier[25:33]                                              # NPP <= 1.10  (median N = 13.87)
+u_re_v2 = risk_multiplier[19:35]                                              # NPP <= 1.25  (median N = 15.07)
+u_re_v3 = risk_multiplier[10:23]                                              # NPP <= 1.50  (median N = 16.6)
+u_re_v4 = risk_multiplier[3:28]                                               # NPP <= 1.75  (median N = 18.9)
+u_re_v5 = risk_multiplier[0:17]                                               # NPP <= 2.00  (median N = 21.0)
+u_re_v6 = risk_multiplier[0:17]                                               # NPP <= 2.25  (median N = 19.9)
+u_re_v7 = risk_multiplier[0:28]                                               # NPP <= 2.50  (median N = 23.0)
+u_re_v8 = risk_multiplier[0:11]
+u_re_v9 = risk_multiplier[0:11]
+u_re_v10 = risk_multiplier[0:11]
+
+
+"""  DOWNtrend risk multipliers """
+""" run whole program for each Risk_Multiplier element to find highest bliss parameters for optimal P_L """
+
+
+"""  add_pos volatility parameters   """
+d_ap_v1 = risk_multiplier[23:32]                                              # v1: NPP <= 1.10  (median N = 13.87)
+d_ap_v2 = risk_multiplier[23:36]                                              # v2: NPP <= 1.25  (median N = 15.07)
+d_ap_v3 = risk_multiplier[25:41]                                               # v3: NPP <= 1.50  (median N = 16.6)
+d_ap_v4 = risk_multiplier[32:48]                                               # v4: NPP <= 1.75  (median N = 18.9)
+d_ap_v5 = risk_multiplier[39:54]                                               # v5: NPP <= 2.00  (median N = 21.0)
+d_ap_v6 = risk_multiplier[39:54]                                               # v6: NPP <= 2.25  (median N = 19.9)
+d_ap_v7 = risk_multiplier[39:54]                                               # v7: NPP <= 2.50  (median N = 23.0)
+                                                                            # v8: NPP <= 3.00  (median N = 28.4)
+"""   too volatile for precision risk management  """                       # v9: NPP <= 4.00  (median N = 33.7)
+d_ap_v8 = []                                                                  # v10: NPP > 4.00  (median N = 38.6)
+d_ap_v9 = []
+d_ap_v10 = []
+
+
+"""  Stop Loss volatility parameters   """
+d_sL_v1 = risk_multiplier[35:54]                            
+d_sL_v2 = risk_multiplier[35:54]                          
+d_sL_v3 = risk_multiplier[35:54]                   
+d_sL_v4 = risk_multiplier[35:54]                            
+d_sL_v5 = risk_multiplier[35:54]                          
+d_sL_v6 = risk_multiplier[35:54]                      
+d_sL_v7 = risk_multiplier[35:54]                     
+d_sL_v8 = risk_multiplier[35:54]
+d_sL_v9 = risk_multiplier[35:54]
+d_sL_v10 = risk_multiplier[35:54]
+
+
+"""  Take Profit volatility parameters   """
+d_tp_v1 = risk_multiplier[7:27]                           
+d_tp_v2 = risk_multiplier[7:27]                                
+d_tp_v3 = risk_multiplier[7:27]             
+d_tp_v4 = risk_multiplier[0:13]           
+d_tp_v5 = risk_multiplier[0:13]                          
+d_tp_v6 = risk_multiplier[0:13]                         
+d_tp_v7 = risk_multiplier[0:10]                         
+d_tp_v8 = risk_multiplier[0:10]
+d_tp_v9 = risk_multiplier[0:10]
+d_tp_v10 = risk_multiplier[0:10]
+
+
+"""  RECAN volatility parameters  (same as AP)  """
+d_re_v1 = risk_multiplier[23:32]                                              # NPP <= 1.10  (median N = 13.87)
+d_re_v2 = risk_multiplier[23:36]                                              # NPP <= 1.25  (median N = 15.07)
+d_re_v3 = risk_multiplier[10:23]                                              # NPP <= 1.50  (median N = 16.6)
+d_re_v4 = risk_multiplier[25:41]                                               # NPP <= 1.75  (median N = 18.9)
+d_re_v5 = risk_multiplier[32:48]                                               # NPP <= 2.00  (median N = 21.0)
+d_re_v6 = risk_multiplier[39:54]                                               # NPP <= 2.25  (median N = 19.9)
+d_re_v7 = risk_multiplier[39:54]                                               # NPP <= 2.50  (median N = 23.0)
+d_re_v8 = risk_multiplier[39:54]
+d_re_v9 = risk_multiplier[39:54]
+d_re_v10 = risk_multiplier[39:54]
+
+
+"""  calculates and displays in Dataframe A,B,C,D Risk Mgmt volatility levels 
+
+syntax to call, enter script as follows:
+
+addpos["L"]["v2L"]  yields: 1.25
+ 'a' then = FL + ap_v2[0]*N
+ or, 
+  a = FL + (-0.5)*N  (e.g., for LONG position: add position when price retraces to at least FL-0.5N)
+  
+stoploss["L"]["v6L"]  yields: 2.25
+ 'b' then = FL + sL_v6[0]*N
+ or,
+  b = FL + (-2.00)*N  (e.g., for LONG position: stop loss occurs when price retraces to FL-2N)
+
+"""
+
+vol_realm = {"v1" : 1.10, "v2" : 1.25, "v3" : 1.50, "v4" : 1.75, "v5" : 2.00, "v6" : 2.25, "v7" : 2.50, "v8" :  2.75, "v9" : 3.00, "v10" : 4.00}                                                                  
+
+
+rownum = 10
+for rownum in range (1, 1500):
+    if df.TrendDay.loc[rownum] > 0 and df.TrendDir.loc[rownum] == "Up":
+
+        """ AP_U function: AE_FL: price at which trigger AP """
+        if df.NPP.loc[rownum - 1] <= vol_realm["v1"]:
+            a = df.FL.loc[rownum - 1] +  u_ap_v1[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v2"]:                    
+            a = df.FL.loc[rownum - 1] +  u_ap_v2[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v3"]:
+            a = df.FL.loc[rownum - 1] +  u_ap_v3[0] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v4"]:
+            a = df.FL.loc[rownum - 1] +  u_ap_v4[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v5"]:
+            a = df.FL.loc[rownum - 1] +  u_ap_v5[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v6"]:
+            a = df.FL.loc[rownum - 1] +  u_ap_v6[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v7"]:
+            a = df.FL.loc[rownum - 1] +  u_ap_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v8"]:
+            a = "" 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v9"]:
+            a = ""              
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v10"]:
+            a = "" 
+        elif df.NPP.loc[rownum - 1] > vol_realm["v10"]:
+            a = ""              
+
+        df.a.loc[rownum] = a   # print value in dataframe slice 
+
+        """ SL_U function: AE_FL: price at which triggers SL """
+        if df.NPP.loc[rownum - 1] <= vol_realm["v1"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v1[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v2"]:                    
+            b = df.FL.loc[rownum - 1] +  u_sL_v2[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v3"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v3[0] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v4"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v4[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v5"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v5[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v6"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v6[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v7"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v8"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v9"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v10"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] > vol_realm["v10"]:
+            b = df.FL.loc[rownum - 1] +  u_sL_v7[0] * df.N.loc[rownum - 1]           
+            
+        df.b.loc[rownum] = b
+
+        """ TP_U function: FE_FL: price at which triggers TP """
+        if df.NPP.loc[rownum - 1] <= vol_realm["v1"]:
+            c = df.FL.loc[rownum - 1] +  u_tp_v1[3] * df.N.loc[rownum - 1]    # initial hold is tp_v1[3]    
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v2"]:                    
+            c = df.FL.loc[rownum - 1] +  u_tp_v2[3] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v3"]:
+            c = df.FL.loc[rownum - 1] +  u_tp_v3[3] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v4"]:
+            c = df.FL.loc[rownum - 1] +  u_tp_v4[3] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v5"]:
+            c = df.FL.loc[rownum - 1] +  u_tp_v5[3] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v6"]:
+            c = df.FL.loc[rownum - 1] +  u_tp_v6[3] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v7"]:
+            c = df.FL.loc[rownum - 1] +  u_tp_v7[3] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v8"]:
+            c = "" 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v9"]:
+            c = ""              
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v10"]:
+            c = ""     
+        elif df.NPP.loc[rownum - 1] > vol_realm["v10"]:
+            c = ""                            
+            
+        df.c.loc[rownum] = c
+        
+        """ RE_U function: AE_FL: price at which triggers RE-ENTRY """
+        if df.NPP.loc[rownum - 1] <= vol_realm["v1"]:
+            d = df.FL.loc[rownum - 1] +  u_re_v1[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v2"]:                    
+            d = df.FL.loc[rownum - 1] +  u_re_v2[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v3"]:
+            d = df.FL.loc[rownum - 1] +  u_re_v3[0] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v4"]:
+            d = df.FL.loc[rownum - 1] +  u_re_v4[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v5"]:
+            d = df.FL.loc[rownum - 1] +  u_re_v5[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v6"]:
+            d = df.FL.loc[rownum - 1] +  u_re_v6[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v7"]:
+            d = df.FL.loc[rownum - 1] +  u_re_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v8"]:
+            d = "" 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v9"]:
+            d = ""              
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v10"]:
+            d = ""                
+        elif df.NPP.loc[rownum - 1] > vol_realm["v10"]:
+            d = ""            
+
+        df.d.loc[rownum] = d        
+
+        rownum += 1
+        
+        
+        
+    elif df.TrendDay.loc[rownum] > 0 and df.TrendDir.loc[rownum] == "Down":
+        
+        """ AP_D function: AE_FL: price at which triggers AP """
+        if df.NPP.loc[rownum - 1] <= vol_realm["v1"]:
+            a = df.FL.loc[rownum - 1] -  d_ap_v1[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v2"]:                    
+            a = df.FL.loc[rownum - 1] -  d_ap_v2[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v3"]:
+            a = df.FL.loc[rownum - 1] -  d_ap_v3[0] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v4"]:
+            a = df.FL.loc[rownum - 1] -  d_ap_v4[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v5"]:
+            a = df.FL.loc[rownum - 1] -  d_ap_v5[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v6"]:
+            a = df.FL.loc[rownum - 1] -  d_ap_v6[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v7"]:
+            a = df.FL.loc[rownum - 1] -  d_ap_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v8"]:
+            a = "" 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v9"]:
+            a = ""              
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v10"]:
+            a = ""  
+        elif df.NPP.loc[rownum - 1] > vol_realm["v10"]:
+            a = ""             
+            
+        df.a.loc[rownum] = a   # print value in dataframe slice
+        
+        
+        """ SL_D function: AE_FL: price at which trigger SL """
+        if df.NPP.loc[rownum - 1] <= vol_realm["v1"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v1[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v2"]:                    
+            b = df.FL.loc[rownum - 1] -  d_sL_v2[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v3"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v3[0] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v4"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v4[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v5"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v5[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v6"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v6[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v7"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v8"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v9"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v10"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v7[0] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] > vol_realm["v10"]:
+            b = df.FL.loc[rownum - 1] -  d_sL_v7[0] * df.N.loc[rownum - 1]            
+
+        df.b.loc[rownum] = b        
+        
+        
+        """ TP_D function: FE_FL: price at which triggers TP """
+        if df.NPP.loc[rownum - 1] <= vol_realm["v1"]:
+            c = df.FL.loc[rownum - 1] -  d_tp_v1[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v2"]:                    
+            c = df.FL.loc[rownum - 1] -  d_tp_v2[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v3"]:
+            c = df.FL.loc[rownum - 1] -  d_tp_v3[0] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v4"]:
+            c = df.FL.loc[rownum - 1] -  d_tp_v4[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v5"]:
+            c = df.FL.loc[rownum - 1] -  d_tp_v5[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v6"]:
+            c = df.FL.loc[rownum - 1] -  d_tp_v6[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v7"]:
+            c = df.FL.loc[rownum - 1] -  d_tp_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v8"]:
+            c = "" 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v9"]:
+            c = ""              
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v10"]:
+            c = ""        
+        elif df.NPP.loc[rownum - 1] > vol_realm["v10"]:
+            c = ""                    
+            
+        df.c.loc[rownum] = c
+
+        
+        """ RE_D function: AE_FL: price at which triggers RE-ENTRY """
+        if df.NPP.loc[rownum - 1] <= vol_realm["v1"]:
+            d = df.FL.loc[rownum - 1] -  d_re_v1[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v2"]:                    
+            d = df.FL.loc[rownum - 1] -  d_re_v2[0] * df.N.loc[rownum - 1]       
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v3"]:
+            d = df.FL.loc[rownum - 1] -  d_re_v3[0] * df.N.loc[rownum - 1]
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v4"]:
+            d = df.FL.loc[rownum - 1] -  d_re_v4[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v5"]:
+            d = df.FL.loc[rownum - 1] -  d_re_v5[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v6"]:
+            d = df.FL.loc[rownum - 1] -  d_re_v6[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v7"]:
+            d = df.FL.loc[rownum - 1] -  d_re_v7[0] * df.N.loc[rownum - 1] 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v8"]:
+            d = "" 
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v9"]:
+            d = ""              
+        elif df.NPP.loc[rownum - 1] <= vol_realm["v10"]:
+            d = "" 
+        elif df.NPP.loc[rownum - 1] > vol_realm["v10"]:
+            d = ""            
+
+        df.d.loc[rownum] = d        
+        
+        
+        rownum += 1
+                
+                
+                
+                
+df[["TR", "N", "NPP", "FL", "SL", "Sep", "TrendDay", "FE_FL", "AE_FL", "SP", "En_price1", "Counter1", "Counter2", "Trades", "Pos_St", "Pos_End", "a", "b", "c", "d", "En_price2", "Ex_price1", "Ex_price2", "Ex_price3", "Ex_price4", "Ex_price5", "P_L", "Capital"]] = df[["TR", "N", "NPP", "FL", "SL", "Sep", "TrendDay", "FE_FL", "AE_FL", "SP", "En_price1", "Counter1", "Counter2", "Trades", "Pos_St", "Pos_End", "a", "b", "c", "d", "En_price2", "Ex_price1", "Ex_price2", "Ex_price3", "Ex_price4", "Ex_price5", "P_L", "Capital"]].apply(pd.to_numeric)
+
+
+
+
+df["SP"].fillna("", inplace = True)
+df["En_price1"].fillna("", inplace = True)
+df["Pos_St"].fillna("", inplace = True)
+df["Pos_End"].fillna("", inplace = True)
+df["Counter1"].fillna("", inplace = True)
+df["Counter2"].fillna("", inplace = True)
+df["Trades"].fillna("", inplace = True)
+df["Trade_Trig"].fillna("", inplace = True)
+df["a"].fillna("", inplace = True)
+df["b"].fillna("", inplace = True)
+df["c"].fillna("", inplace = True)
+df["d"].fillna("", inplace = True)
+df["RE_CAN"].fillna("", inplace = True)
+df["En_price2"].fillna("", inplace = True)
+df["Ex_price1"].fillna("", inplace = True)
+df["Ex_price2"].fillna("", inplace = True)
+df["Ex_price3"].fillna("", inplace = True)
+df["Ex_price4"].fillna("", inplace = True)
+df["Ex_price5"].fillna("", inplace = True)
+df["P_L"].fillna("", inplace = True)
+df["Capital"].fillna("", inplace = True)
+
+
+
+sigfigs = {
+            'N': 2, 'NPP': 3, 'FL': 2, 'SL': 2, 'Sep': 3, 'FE_FL': 3,
+           'AE_FL': 3, 'TrendDay': 0, 'SP': 2, 'a':0, 'b':0, 'c':0
+          }
+
+df.iloc[1210:1270, 10:28].round(sigfigs)
+
+
+
+def get_long_Pos_St():
+
+    if df.TrendDay.loc[rownum] = 0 and df.NPP.loc[rownum] <= 1.20:
+        SP = df.high.loc[rownum]
+        df.SP.loc[rownum] = SP
+        rownum += 1
+        while df.TrendDay.loc[rownum] > 0:                
+            if df.high.loc[rownum] > SP:
+                EnP1 = df.high.loc[rownum] + tick
+                EnP2 = df.high.loc[rownum] + tick
+                df.EnP1.loc[rownum] = EnP1
+                df.EnP2.loc[rownum] = EnP2
+                df.Counter1.loc[rownum] = 1
+                df.Counter2.loc[rownum] = 1
+                df.Pos_St.loc[rownum] = 2
+                df.Pos_End.loc[rownum] = 2
+                df.Pos_St.loc[rownum+1] = df.Pos_End.loc[rownum]
+                break
+            else:
+                SP = df.high.loc[rownum]
+                df.SP.loc[rownum] = SP
+                rownum += 1
+                break
+
+    elif df.TrendDay.loc[rownum] = 0 and df.NPP.loc[rownum] > 1.20 and df.NPP.loc[rownum] <= 1.50:
+        SP = df.FL.loc[rownum - 1] +  re_v3[7] * df.N.loc[rownum - 1]  # FL + (-0.25)N
+        rownum += 1
+        while df.TrendDay.loc[rownum] > 0:            
+            if df.low.loc[rownum] < SP:
+                EnP1 = SP - tick
+                EnP2 = SP - tick
+                df.EnP1.loc[rownum] = EnP1
+                df.EnP2.loc[rownum] = EnP2
+                df.Counter1.loc[rownum] = 1
+                df.Counter2.loc[rownum] = 1
+                df.Pos_St.loc[rownum] = 2
+                df.Pos_End.loc[rownum] = 2
+                df.Pos_St.loc[rownum+1] = df.Pos_End.loc[rownum]
+                break
+            else:
+                rownum += 1
+
+    elif df.TrendDay.loc[rownum] = 0 and df.NPP.loc[rownum] > 1.50 and df.NPP.loc[rownum] <= 2.00:
+        SP = df.FL.loc[rownum - 1] +  re_v5[6] * df.N.loc[rownum - 1]  # FL + (-0.75)N  # retrace to FL - 0.75N
+        rownum += 1
+        while df.TrendDay.loc[rownum] > 0:            
+            if df.low.loc[rownum] < SP:
+                EnP1 = SP - tick
+                EnP2 = SP - tick
+                df.EnP1.loc[rownum] = EnP1
+                df.EnP2.loc[rownum] = EnP2
+                df.Counter1.loc[rownum] = 1
+                df.Counter2.loc[rownum] = 1
+                df.Pos_St.loc[rownum] = 2
+                df.Pos_End.loc[rownum] = 2
+                df.Pos_St.loc[rownum+1] = df.Pos_End.loc[rownum]
+                break
+            else:
+                rownum += 1
+               
+    elif df.TrendDay.loc[rownum] = 0 and df.NPP.loc[rownum] > 2.00 and df.NPP.loc[rownum] <= 3.00:
+        SP = df.FL.loc[rownum - 1] +  re_v4[7] * df.N.loc[rownum - 1]  # FL + (-1.00)N  # retrace to FL - 1N
+        rownum += 1
+        while df.TrendDay.loc[rownum] > 0:            
+            if df.low.loc[rownum] < SP:
+                EnP1 = SP - tick
+                EnP2 = SP - tick
+                df.EnP1.loc[rownum] = EnP1
+                df.EnP2.loc[rownum] = EnP2
+                df.Counter1.loc[rownum] = 1
+                df.Counter2.loc[rownum] = 1
+                df.Pos_St.loc[rownum] = 2
+                df.Pos_End.loc[rownum] = 2
+                df.Pos_St.loc[rownum+1] = df.Pos_End.loc[rownum]
+                break
+            else:
+                rownum += 1
+
+    elif df.TrendDay.loc[rownum] = 0 and df.NPP.loc[rownum] > 3.00 and df.NPP.loc[rownum] <= 5.00:
+        SP = df.FL.loc[rownum - 1] +  re_v5[3] * df.N.loc[rownum - 1]  # FL + (-1.50)N  # retrace to FL - 1.5N
+        rownum += 1
+        while df.TrendDay.loc[rownum] > 0:            
+            if df.low.loc[rownum] < SP:
+                EnP1 = SP - tick
+                EnP2 = SP - tick
+                df.EnP1.loc[rownum] = EnP1
+                df.EnP2.loc[rownum] = EnP2
+                df.Counter1.loc[rownum] = 1
+                df.Counter2.loc[rownum] = 1
+                df.Pos_St.loc[rownum] = 2
+                df.Pos_End.loc[rownum] = 2
+                df.Pos_St.loc[rownum+1] = df.Pos_End.loc[rownum]
+                break
+            else:
+                rownum += 1
+
+    elif df.TrendDay.loc[rownum] = 0 and df.NPP.loc[rownum] > 5.00:
+        SP = df.FL.loc[rownum - 1] +  re_v6[1] * df.N.loc[rownum - 1]  # FL + (-1.85)N  # retrace to FL - 1.85N
+        rownum += 1
+        while df.TrendDay.loc[rownum] > 0:            
+            if df.low.loc[rownum] < SP:
+                EnP1 = SP - tick
+                EnP2 = SP - tick
+                df.EnP1.loc[rownum] = EnP1
+                df.EnP2.loc[rownum] = EnP2
+                df.Counter1.loc[rownum] = 1
+                df.Counter2.loc[rownum] = 1
+                df.Pos_St.loc[rownum] = 2
+                df.Pos_End.loc[rownum] = 2
+                df.Pos_St.loc[rownum+1] = df.Pos_End.loc[rownum]
+                break
+            else:
+                rownum += 1
+                
+                
+                
